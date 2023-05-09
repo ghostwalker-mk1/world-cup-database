@@ -1,61 +1,32 @@
-#! /bin/bash
+#!/bin/bash
 
 if [[ $1 == "test" ]]
 then
-  PSQL="psql --username=postgres --dbname=worldcuptest -t --no-align -c"
+  PSQL="psql --username=postgres --dbname=worldcuptest -t --no-align"
 else
-  PSQL="psql --username=freecodecamp --dbname=worldcup -t --no-align -c"
+  PSQL="psql --username=freecodecamp --dbname=worldcup -t --no-align"
 fi
 
 # Do not change code above this line. Use the PSQL variable above to query your database.
 
 # Script to insert data from games.csv into worldcup database
 
-echo $($PSQL "TRUNCATE games, teams RESTART IDENTITY")
-awk '(NR>1)' games.csv | while IFS="," read YEAR ROUND WINNER OPPONENT WINNER_GOALS OPPONENT_GOALS
-do
-    
-  # TEAMS TABLE
+awk -F',' 'NR>1 {
+  printf "INSERT INTO teams (name) SELECT '\''%s'\'' WHERE NOT EXISTS (SELECT 1 FROM teams WHERE name = '\''%s'\'');\n", $3, $3
+  printf "INSERT INTO teams (name) SELECT '\''%s'\'' WHERE NOT EXISTS (SELECT 1 FROM teams WHERE name = '\''%s'\'');\n", $4, $4
+  printf "INSERT INTO games (year, round, winner_goals, opponent_goals, winner_id, opponent_id) SELECT %d, '\''%s'\'', %d, %d, (SELECT team_id FROM teams WHERE name = '\''%s'\''), (SELECT team_id FROM teams WHERE name = '\''%s'\'') WHERE NOT EXISTS (SELECT 1 FROM games WHERE year = %d AND round = '\''%s'\'' AND winner_id = (SELECT team_id FROM teams WHERE name = '\''%s'\'') AND opponent_id = (SELECT team_id FROM teams WHERE name = '\''%s'\''));\n", $1, $2, $5, $6, $3, $4, $1, $2, $3, $4
 
-  # get winning team
-  WIN_TEAM=$($PSQL "SELECT name FROM teams WHERE name='$WINNER'")
-  # if not found
-  if [[ -z $WIN_TEAM ]]
-  then
-    # insert winning team
-    INSERT_WIN_TEAM_RESULT=$($PSQL "INSERT INTO teams(name) VALUES('$WINNER')")
-  if [[ $INSERT_WIN_TEAM_RESULT == 'INSERT 0 1' ]]
-  then
-    echo Inserted into teams: $WINNER
-  fi
-  fi
+}' games.csv | $PSQL >/dev/null
 
-  # get opponent team
-  OPP_TEAM=$($PSQL "SELECT name FROM teams WHERE name='$OPPONENT'")
-  # if not found
-  if [[ -z $OPP_TEAM ]]
-  then
-    # insert opponent team
-    INSERT_OPP_TEAM_RESULT=$($PSQL "INSERT INTO teams(name) VALUES('$OPPONENT')")
-  if [[ $INSERT_OPP_TEAM_RESULT == 'INSERT 0 1' ]]
-  then
-    echo Inserted into teams: $OPPONENT
-  fi
-  fi
+: '
+EXPLAINATION:
+-F',' sets the field separator to a comma
+NR>1 skips the first line of the CSV file, which contains the column names
+$1, $2, $3, $4, $5, and $6 refer to the columns in the CSV file
 
-  # GAMES TABLE
-
-  # get winner_id
-  WINNER_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$WINNER'") 
-
-  # get opponent_id
-  OPPONENT_ID=$($PSQL "SELECT team_id FROM teams WHERE name='$OPPONENT'")
-
-  # insert game info
-  GAME_INFO=$($PSQL "INSERT INTO games(year, round, winner_goals, opponent_goals, winner_id, opponent_id) VALUES($YEAR, '$ROUND', $WINNER_GOALS, $OPPONENT_GOALS, $WINNER_ID, $OPPONENT_ID)")
-  if [[ $GAME_INFO == 'INSERT 0 1' ]]
-  then
-    echo Inserted into games: $YEAR, $ROUND, $WINNER_GOALS, $OPPONENT_GOALS, $WINNER_ID, $OPPONENT_ID
-  fi
-
-done
+The first printf inserts a new row into the "teams" table with the team name in column 3, if it does not already exist in the table.
+The second printf inserts a new row into the "teams" table with the team name in column 4, if it does not already exist in the table.
+The third printf inserts a new row into the "games" table with the year in column 1, the round in column 2, the winners goals in column 5, the opponents goals in column 6, the ID of the winning team (obtained by looking up the team name in column 3), and the ID of the opposing team (obtained by looking up the team name in column 4).
+The output of printf is piped to $PSQL.
+$PSQL >/dev/null is redirecting the output of the psql command, which is stored in the $PSQL variable, to /dev/null. This effectively silences any output produced by the psql command, while still allowing the script to execute the necessary SQL queries against the database.
+'
